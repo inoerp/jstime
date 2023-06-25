@@ -1,5 +1,6 @@
 // Common code used by both `module.rs` and `script.rs`
 
+
 pub(crate) fn create_script_origin<'s>(
     scope: &mut v8::HandleScope<'s, ()>,
     filepath: v8::Local<'s, v8::String>,

@@ -5,6 +5,18 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_sql() {
+        let _setup_guard = common::setup();
+        let options = jstime::Options::default();
+        let mut jstime = jstime::JSTime::new(options);
+        let result = jstime.run_script("typeof sqlSelect;", "jstime");
+        let ret = jstime.run_script("sqlSelect('1000');", "jstime").unwrap();
+        println!("ret value {:?}", ret);    
+        assert_eq!(result.unwrap(), "function");
+    }
+
     #[test]
     fn queue_microtask() {
         let _setup_guard = common::setup();

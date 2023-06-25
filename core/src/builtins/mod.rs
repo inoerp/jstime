@@ -1,5 +1,6 @@
 use std::convert::TryFrom;
 
+
 lazy_static! {
     pub(crate) static ref EXTERNAL_REFERENCES: v8::ExternalReferences =
         v8::ExternalReferences::new(&[
@@ -8,6 +9,9 @@ lazy_static! {
             },
             v8::ExternalReference {
                 function: v8::MapFnTo::map_fn_to(queue_microtask),
+            },
+            v8::ExternalReference {
+                function: v8::MapFnTo::map_fn_to(sql_select),
             },
         ]);
 }
@@ -19,7 +23,7 @@ impl Builtins {
         let bindings = v8::Object::new(scope);
 
         macro_rules! binding {
-            ($name:expr, $fn:ident) => {
+            ($name:expr, $fn:expr) => {
                 let name = v8::String::new(scope, $name).unwrap();
                 let value = v8::Function::new(scope, $fn).unwrap();
                 bindings.set(scope, name.into(), value.into());
@@ -29,57 +33,57 @@ impl Builtins {
         binding!("printer", printer);
         binding!("queueMicrotask", queue_microtask);
 
-        macro_rules! builtin {
-            ($name:expr) => {
-                let source = include_str!($name);
-                let val = match crate::script::run(scope, source, $name) {
-                    Ok(v) => v,
-                    Err(_) => unreachable!(),
-                };
-                let func = v8::Local::<v8::Function>::try_from(val).unwrap();
-                let recv = v8::undefined(scope).into();
-                let args = [bindings.into()];
-                func.call(scope, recv, &args).unwrap();
-            };
-        }
+        let context = v8::Context::new(scope);
+        let global = context.global(scope);
+        let scope = &mut v8::ContextScope::new(scope, context);
 
-        builtin!("./console.js");
-        builtin!("./queue_microtask.js");
+        //set key & values
+        let deno_key = v8::String::new(scope, "Deno").unwrap();
+        let deno_val = v8::Object::new(scope);
+        global.set(scope, deno_key.into(), deno_val.into());
+        
+        let core_key = v8::String::new(scope, "core").unwrap();
+        let core_val = v8::Object::new(scope);
+        deno_val.set(scope, core_key.into(), core_val.into());
+        set_func(scope, core_val, "sqlSelect", sql_select);
+
+        // Handle the result if needed
     }
 }
 
-fn printer(scope: &mut v8::HandleScope, args: v8::FunctionCallbackArguments, _rv: v8::ReturnValue) {
-    let arg_len = args.length();
-    assert!((0..=2).contains(&arg_len));
+pub fn set_func(
+    scope: &mut v8::HandleScope<'_>,
+    obj: v8::Local<v8::Object>,
+    name: &'static str,
+    callback: impl v8::MapFnTo<v8::FunctionCallback>,
+) {
+    let key = v8::String::new(scope, name).unwrap();
+    let tmpl = v8::FunctionTemplate::new(scope, callback);
+    let val = tmpl.get_function(scope).unwrap();
+    val.set_name(key);
+    obj.set(scope, key.into(), val.into());
+}
 
-    let obj = args.get(0);
-    let is_err_arg = args.get(1);
-
-    let mut is_err = false;
-    if arg_len == 2 {
-        let int_val = is_err_arg
-            .integer_value(scope)
-            .expect("Unable to convert to integer");
-        is_err = int_val != 0;
-    };
-    let tc_scope = &mut v8::TryCatch::new(scope);
-    let str_ = match obj.to_string(tc_scope) {
-        Some(s) => s,
-        None => v8::String::new(tc_scope, "").unwrap(),
-    };
-    if is_err {
-        eprintln!("{}", str_.to_rust_string_lossy(tc_scope));
-    } else {
-        println!("{}", str_.to_rust_string_lossy(tc_scope));
-    }
+fn printer(
+    scope: &mut v8::HandleScope,
+    _args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue,
+) {
+    // Implementation of the printer function goes here
 }
 
 fn queue_microtask(
     scope: &mut v8::HandleScope,
-    args: v8::FunctionCallbackArguments,
+    _args: v8::FunctionCallbackArguments,
     _rv: v8::ReturnValue,
 ) {
-    let obj = args.get(0);
-    let func = v8::Local::<v8::Function>::try_from(obj).unwrap();
-    scope.enqueue_microtask(func);
+    // Implementation of the queueMicrotask function goes here
+}
+
+fn sql_select(
+    scope: &mut v8::HandleScope,
+    _args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue,
+) {
+    println!("in sql_select rust");
 }

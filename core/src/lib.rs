@@ -7,7 +7,46 @@ mod js_loading;
 mod module;
 mod script;
 
+
+
+
 pub(crate) use isolate_state::IsolateState;
+
+
+pub fn create_snapshot(mut options: Options) -> Vec<u8> {
+    assert!(
+        options.snapshot.is_none(),
+        "Cannot pass snapshot data while creating snapshot"
+    );
+    options.taking_snapshot = true;
+    let mut s = v8::SnapshotCreator::new(Some(&builtins::EXTERNAL_REFERENCES));
+
+    {
+        let mut jstime = JSTime::create(options, unsafe { s.get_owned_isolate() });
+        {
+            let context = IsolateState::get(jstime.isolate()).borrow().context();
+            let scope = &mut v8::HandleScope::new(jstime.isolate());
+            let context = v8::Local::new(scope, context);
+            s.set_default_context(context);
+        }
+        // Context needs to be dropped before create_blob
+        IsolateState::get(jstime.isolate())
+            .borrow_mut()
+            .drop_context();
+    }
+
+    match s.create_blob(v8::FunctionCodeHandling::Keep) {
+        Some(data) => data.to_owned(),
+        None => {
+            // dropping SnapshotCreator will panic if it failed, and
+            // we're going to panic here anyway, so just forget it.
+            std::mem::forget(s);
+            panic!("Unable to create snapshot");
+        }
+    }
+}
+
+
 
 pub fn init(v8_flags: Option<Vec<String>>) {
     if let Some(mut v8_flags) = v8_flags {
@@ -56,42 +95,7 @@ impl JSTime {
         let isolate = v8::Isolate::new(create_params);
         JSTime::create(options, isolate)
     }
-
-    pub fn create_snapshot(mut options: Options) -> Vec<u8> {
-        assert!(
-            options.snapshot.is_none(),
-            "Cannot pass snapshot data while creating snapshot"
-        );
-        options.taking_snapshot = true;
-
-        let mut s = v8::SnapshotCreator::new(Some(&builtins::EXTERNAL_REFERENCES));
-
-        {
-            let mut jstime = JSTime::create(options, unsafe { s.get_owned_isolate() });
-            {
-                let context = IsolateState::get(jstime.isolate()).borrow().context();
-                let scope = &mut v8::HandleScope::new(jstime.isolate());
-                let context = v8::Local::new(scope, context);
-                s.set_default_context(context);
-            }
-            // Context needs to be dropped before create_blob
-            IsolateState::get(jstime.isolate())
-                .borrow_mut()
-                .drop_context();
-        }
-
-        match s.create_blob(v8::FunctionCodeHandling::Keep) {
-            Some(data) => data.to_owned(),
-            None => {
-                // dropping SnapshotCreator will panic if it failed, and
-                // we're going to panic here anyway, so just forget it.
-                std::mem::forget(s);
-                panic!("Unable to create snapshot");
-            }
-        }
-    }
-
-    fn create(options: Options, mut isolate: v8::OwnedIsolate) -> JSTime {
+   fn create(options: Options, mut isolate: v8::OwnedIsolate) -> JSTime {
         let global_context = {
             let scope = &mut v8::HandleScope::new(&mut isolate);
             let context = v8::Context::new(scope);

@@ -1,9 +1,10 @@
 use jstime_core as jstime;
 
 mod common;
+mod api;
 
 #[cfg(test)]
-mod api {
+mod test_apis {
     use super::*;
     #[test]
     fn run_script() {
